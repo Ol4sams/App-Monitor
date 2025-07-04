@@ -23,7 +23,7 @@
 {
   "MonitorSettings": {
     "ExecutableName": "yourapp",
-    "ExecutablePath": "C:\\Path\\To\\yourapp.exe",
+    "ExecutablePath": "C:\\Path\\To\\yourapp.exe", // работает с nas: "\\\\nas.drive\\volume\\Path\\To\\yourapp.exe",
     "CheckIntervalSeconds": 30
   }
 }
