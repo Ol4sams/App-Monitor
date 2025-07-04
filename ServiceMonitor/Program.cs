@@ -352,11 +352,11 @@ class DialogHelper
                     if (text.IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0)
                     {
                         found = hwnd;
-                        return false; // остановить перебор
+                        return false;
                     }
                 }
             }
-            return true; // продолжить
+            return true;
         }, IntPtr.Zero);
 
         return found;
