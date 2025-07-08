@@ -2,7 +2,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Diagnostics.Eventing.Reader;
 
 class MonitorSettings
 {
@@ -36,9 +35,6 @@ class Program
         Console.WriteLine($"[Monitor] Watching: {settings.ExecutableName} from {settings.ExecutablePath}");
         Console.WriteLine($"Check interval: {interval.TotalSeconds} seconds");
 
-        //PrintCrashReports(settings.ExecutableName);
-        // PrintFatalCrashReports(settings.ExecutableName, TimeSpan.FromMinutes(96));
-
         while (true)
         {
             try
@@ -67,7 +63,7 @@ class Program
                 Log($"❗ Error: {ex.Message}");
             }
 
-            Thread.Sleep(interval);
+            await Task.Delay(interval);
         }
     }
 
@@ -84,6 +80,7 @@ class Program
                     if (_lastStartedProcess != null)
                     {
                         Log($"⚠️ Отслеживаемый процесс завершился. Код выхода: {_lastStartedProcess?.ExitCode} — {InterpretExitCode(_lastStartedProcess!.ExitCode)}");
+                        _lastStartedProcess.Dispose();
                     }
                     _lastStartedProcess = null;
                 };
@@ -139,122 +136,20 @@ class Program
             try
             {
                 if (proc.MainModule?.FileName?.Equals(fullPath, StringComparison.OrdinalIgnoreCase) == true)
-                {
+                {                    
                     return proc;
                 }
             }
-            catch { }
+            catch
+            {
+                // Access denied и т.п.
+            }
+            
+            proc.Dispose();
         }
+
         return null;
-    }
-
-    static void PrintFatalCrashReports(string exeName, TimeSpan lookback)
-    {
-        const string logName = "Application";
-        var lookbackMs = (long)lookback.TotalMilliseconds;
-
-        string queryXml = $@"
-<QueryList>
-  <Query Id='0' Path='{logName}'>
-    <Select Path='{logName}'>
-      *[System[(EventID=1000) and TimeCreated[timediff(@SystemTime) &lt;= {lookbackMs}]]]
-    </Select>
-  </Query>
-</QueryList>";
-
-        try
-        {
-            var reader = new EventLogReader(new EventLogQuery(logName, PathType.LogName, queryXml));
-            Log($"📋 Ищем фатальные сбои {exeName} за последние {lookback.TotalMinutes} минут...");
-
-            int found = 0;
-            EventRecord? evt;
-            while ((evt = reader.ReadEvent()) != null)
-            {
-                using (evt)
-                {
-                    string? msg = evt.FormatDescription();
-
-                    if (!string.IsNullOrEmpty(msg) && msg.Contains(exeName, StringComparison.OrdinalIgnoreCase))
-                    {
-                        Log($"🛑 Краш найден:");
-                        Log($"    Дата: {evt.TimeCreated}");
-                        Log($"    Источник: {evt.ProviderName}, ID: {evt.Id}");
-                        Log($"    {SummarizeCrashMessage(msg)}");
-                        found++;
-                    }
-                }
-            }
-
-            if (found == 0)
-            {
-                Log("✅ Фатальных сбоев не найдено.");
-            }
-        }
-        catch (Exception ex)
-        {
-            Log($"❗ Ошибка при чтении журнала: {ex.Message}");
-        }
-    }
-
-    static string SummarizeCrashMessage(string message)
-    {
-        // Возвращаем первую строку и код ошибки (если есть)
-        var lines = message.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        var summary = lines.FirstOrDefault()?.Trim() ?? "";
-        var code = lines.FirstOrDefault(l => l.Contains("исключение") || l.Contains("exception"))?.Trim();
-
-        return summary + (code != null ? $" ({code})" : "");
-    }
-
-
-    static void PrintCrashReports(string exeName)
-    {
-        string logName = "Application";
-        var query = $@"
-<QueryList>
-  <Query Id='0' Path='{logName}'>
-    <Select Path='{logName}'>
-      *[System[(EventID=1000 or EventID=1001)]]
-    </Select>
-  </Query>
-</QueryList>";
-
-        try
-        {
-            var reader = new EventLogReader(new EventLogQuery(logName, PathType.LogName, query));
-
-            Log($"📋 Поиск краш-событий для {exeName} в журнале Windows...");
-            int found = 0;
-
-            EventRecord? evt;
-            while ((evt = reader.ReadEvent()) != null)
-            {
-                using (evt)
-                {
-                    string? msg = evt.FormatDescription();
-
-                    if (!string.IsNullOrEmpty(msg) && msg.IndexOf(exeName, StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        Log($"🛑 Краш найден:");
-                        Log($"    Дата: {evt.TimeCreated}");
-                        Log($"    ID: {evt.Id}, Источник: {evt.ProviderName}");
-                        Log($"    Описание: {msg.Split('\n').FirstOrDefault()?.Trim()}...");
-                        found++;
-                    }
-                }
-            }
-
-            if (found == 0)
-            {
-                Log("✅ Нет записей о сбоях для указанного EXE.");
-            }
-        }
-        catch (Exception ex)
-        {
-            Log($"❗ Ошибка при чтении журнала: {ex.Message}");
-        }
-    }
+    }    
 
     static string InterpretExitCode(int code)
     {
